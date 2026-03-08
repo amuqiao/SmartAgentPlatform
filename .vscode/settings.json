@@ -1,0 +1,4 @@
+{
+    "python.analysis.enabled": false,
+    "python.analysis.typeCheckingMode": "off"
+}

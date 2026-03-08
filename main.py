@@ -1,0 +1,240 @@
+from fastapi import FastAPI, Depends, Request
+import argparse
+import os
+from src.dependencies.config import (
+    app_settings,
+    get_app_settings,
+    get_sqlite_config,
+    get_logging_config,
+    AppSettings,
+    SQLiteConfig,
+    LoggingConfig,
+)
+from src.dependencies.database import database_manager, sqlite_connection as sqlite
+from src.dependencies.rate_limit import limiter, rate_limit_exception_handler
+from src.api.v1 import api_v1_router
+from src.middleware import setup_cors, request_logger_middleware
+from src.middleware.request import request_id_middleware
+from src.exception import custom_exception_handler
+from src.exception.base import BaseAppException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from src.config.logger import logger
+from src.infrastructure.events import event_bus, EventType, UserLoggedInEvent, UserRegisteredEvent
+
+# 创建FastAPI应用
+app = FastAPI(
+    title=app_settings.APP_NAME,
+    version=app_settings.APP_VERSION,
+    openapi_url=f"{app_settings.API_V1_STR}/openapi.json",
+)
+
+# 应用限流器
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
+
+
+# 1. 定义事件处理器 - 处理用户注册事件
+def handle_user_registered(event: UserRegisteredEvent):
+    """处理用户注册事件的函数
+
+    事件处理器格式：
+    def 处理器名称(event: 事件类型):
+        # 从event.data中获取事件数据
+        # 处理逻辑
+
+    参数：
+        event: 事件对象，包含事件类型和事件数据
+    """
+    # 从event.data字典中获取事件数据
+    user_id = event.data["user_id"]
+    username = event.data["username"]
+    email = event.data["email"]
+
+    # 处理事件 - 这里只是打印日志，实际应用中可以执行各种操作
+    logger.info(
+        f"【用户注册事件】: 用户ID={user_id}, 用户名={username}, 邮箱={email} 注册成功"
+    )
+
+
+# 2. 定义事件处理器 - 处理用户登录事件
+def handle_user_logged_in(event: UserLoggedInEvent):
+    """处理用户登录事件的函数"""
+    # 从event.data字典中获取事件数据
+    user_id = event.data["user_id"]
+    username = event.data["username"]
+    ip_address = event.data["ip_address"]
+
+    # 处理事件
+    logger.info(
+        f"【用户登录事件】: 用户 {username} (ID: {user_id}) 从 IP {ip_address} 登录成功"
+    )
+
+
+# 应用启动事件
+@app.on_event("startup")
+async def startup_event():
+    """应用启动事件 - 初始化数据库连接和事件订阅"""
+    logger.info(f"应用启动: {app_settings.APP_NAME} v{app_settings.APP_VERSION}")
+    logger.info("正在连接所有数据库...")
+    database_manager.connect_all()
+    # 创建所有表
+    sqlite.Base.metadata.create_all(bind=sqlite.engine)
+    logger.info("所有数据库连接成功")
+
+    # 3. 订阅事件 - 订阅用户注册事件
+    # 订阅格式：event_bus.subscribe(事件类型, 事件处理器)
+    # 参数说明：
+    #   事件类型: EventType枚举值，如EventType.USER_REGISTERED
+    #   事件处理器: 处理该事件的函数，如handle_user_registered
+    event_bus.subscribe(EventType.USER_REGISTERED, handle_user_registered)
+    logger.info("已订阅用户注册事件")
+
+    # 4. 订阅事件 - 订阅用户登录事件
+    event_bus.subscribe(EventType.USER_LOGGED_IN, handle_user_logged_in)
+    logger.info("已订阅用户登录事件")
+    
+    # 5. 启动事件总线
+    event_bus.start()
+    logger.info("事件总线已启动")
+
+
+# 应用关闭事件
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭事件 - 断开数据库连接"""
+    logger.info("应用关闭，正在停止事件总线...")
+    event_bus.stop()
+    logger.info("事件总线已停止")
+    
+    logger.info("正在断开数据库连接...")
+    database_manager.disconnect_all()
+    logger.info("所有数据库连接已断开")
+
+
+# 设置CORS中间件
+setup_cors(app)
+
+# 添加请求日志中间件
+app.middleware("http")(request_logger_middleware)
+
+# 添加Request ID中间件
+app.middleware("http")(request_id_middleware)
+
+
+# 注册全局异常处理器
+app.add_exception_handler(BaseAppException, custom_exception_handler)
+app.add_exception_handler(RequestValidationError, custom_exception_handler)
+app.add_exception_handler(StarletteHTTPException, custom_exception_handler)
+app.add_exception_handler(Exception, custom_exception_handler)
+
+
+# 包含API v1路由
+app.include_router(api_v1_router, prefix=app_settings.API_V1_STR)
+
+
+@app.get("/")
+def root():
+    """根路径"""
+    return {
+        "message": "Welcome to FastAPI Enterprise Architecture",
+        "version": app_settings.APP_VERSION,
+        "api_v1": app_settings.API_V1_STR,
+    }
+
+
+@app.get("/api/v1/config")
+def get_config(
+    app_config: AppSettings = Depends(get_app_settings),
+    db_config: SQLiteConfig = Depends(get_sqlite_config),
+    log_config: LoggingConfig = Depends(get_logging_config),
+):
+    """测试配置依赖注入"""
+    return {
+        "app_name": app_config.APP_NAME,
+        "environment": app_config.ENVIRONMENT,
+        "sqlite_url": db_config.URL,
+        "log_level": log_config.LEVEL,
+        "log_file": log_config.FILE,
+    }
+
+
+if __name__ == "__main__":
+    # 创建命令行参数解析器
+    parser = argparse.ArgumentParser(
+        description="Agent Service API Server",
+        epilog="""
+使用示例：
+
+1. 默认方式运行（开启热重载）：
+   python main.py
+
+2. 关闭热重载模式运行：
+   python main.py --no-reload
+
+3. 指定主机和端口运行：
+   python main.py --host 127.0.0.1 --port 8080
+
+4. 使用环境变量配置：
+   export UVICORN_RELOAD=false UVICORN_HOST=127.0.0.1 UVICORN_PORT=8080
+   python main.py
+
+5. 查看帮助信息：
+   python main.py -h
+   """,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    # 添加reload参数
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=os.getenv("UVICORN_RELOAD", "true").lower() == "true",
+        help="Enable hot reload mode (default: true)",
+    )
+
+    # 添加host参数
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.getenv("UVICORN_HOST", "0.0.0.0"),
+        help="Host to bind (default: 0.0.0.0)",
+    )
+
+    # 添加port参数
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("UVICORN_PORT", "8000")),
+        help="Port to bind (default: 8001)",
+    )
+
+    # 解析命令行参数
+    args = parser.parse_args()
+
+    # 显示API文档访问地址
+    # 如果是本地服务器，使用localhost而不是0.0.0.0或127.0.0.1
+    display_host = args.host
+    if args.host in ("0.0.0.0", "127.0.0.1"):
+        display_host = "localhost"
+
+    print("\nAgent Service API Server 已启动")
+    print("=====================================")
+    print(f"服务地址: http://{args.host}:{args.port}")
+    print(f"Swagger UI: http://{display_host}:{args.port}/docs")
+    print(f"ReDoc: http://{display_host}:{args.port}/redoc")
+    print("=====================================")
+    print("按 Ctrl+C 停止服务\n")
+
+    # 运行uvicorn服务器
+    import uvicorn
+
+    logger.info(f"Starting {app_settings.APP_NAME} v{app_settings.APP_VERSION}")
+    if args.reload:
+        # 当启用reload模式时，需要使用导入字符串
+        uvicorn.run("main:app", host=args.host, port=args.port, reload=True)
+    else:
+        # 非reload模式可以直接传递应用对象
+        uvicorn.run(app, host=args.host, port=args.port, reload=False)
