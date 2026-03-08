@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>股票分析智能体</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .stock-selection {
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        select, button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .analysis-result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+        .category-group {
+            margin-bottom: 10px;
+        }
+        .category-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        .stock-options {
+            margin-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>股票分析智能体</h1>
+        
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        
+        <form action="/analyze" method="post">
+            <div class="stock-selection">
+                <h2>选择股票</h2>
+                <div class="form-group">
+                    <label for="stock">股票</label>
+                    <select name="stock_name" id="stock" required onchange="updateStockCode(this.value)">
+                        <option value="">请选择股票</option>
+                        {% for category in stock_categories %}
+                        <optgroup label="{{ category.name }}">
+                            {% for stock in category.stocks %}
+                            <option value="{{ stock.name }}" data-code="{{ stock.code }}" {% if stock_name == stock.name %}selected{% endif %}>
+                                {{ stock.name }} ({{ stock.code }})
+                            </option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <input type="hidden" name="stock_code" id="stock_code" value="{% if stock_code %}{{ stock_code }}{% endif %}">
+                
+                <div class="form-group">
+                    <label for="analysis_type">分析类型</label>
+                    <select name="analysis_type" id="analysis_type" required>
+                        <option value="">请选择分析类型</option>
+                        {% for type in analysis_types %}
+                        <option value="{{ type.value }}" {% if analysis_type == type.value %}selected{% endif %}>{{ type.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <button type="submit">开始分析</button>
+            </div>
+        </form>
+        
+        {% if analysis_result %}
+        <div class="analysis-result">
+            <h2>分析结果</h2>
+            <h3>{{ stock_name }} ({{ stock_code }}) - {% for type in analysis_types %}{% if analysis_type == type.value %}{{ type.label }}{% endif %}{% endfor %}分析</h3>
+            <pre>{{ analysis_result }}</pre>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script>
+        // 更新股票代码
+        function updateStockCode(stockName) {
+            const stockSelect = document.getElementById('stock');
+            const selectedOption = stockSelect.options[stockSelect.selectedIndex];
+            const stockCode = selectedOption.getAttribute('data-code');
+            if (stockCode) {
+                document.getElementById('stock_code').value = stockCode;
+            }
+        }
+        
+        // 初始化股票代码
+        window.onload = function() {
+            const stockSelect = document.getElementById('stock');
+            if (stockSelect.value) {
+                updateStockCode(stockSelect.value);
+            }
+        };
+    </script>
+</body>
+</html>

@@ -271,13 +271,16 @@ MIT License
 - 项目地址：https://github.com/yourusername/fastapi-enterprise-framework-template
 - 邮件：your.email@example.com
 
-## Agent 测试用例
+## 5. 启动服务
 
 ### 5.1 启动实时语音智能体服务
 
 ```bash
-# 从根目录直接启动实时语音智能体服务
-python examples/agent_examples/agent/realtime_voice_agent/run_server.py
+# 进入实时语音智能体示例目录
+cd examples/agent_examples/agent/realtime_voice_agent
+
+# 启动服务
+python run_server.py
 ```
 
 服务启动后，您应该能看到类似以下输出：
@@ -293,27 +296,97 @@ INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 
 A2A 智能体服务需要先启动服务器，然后再运行客户端：
 
-**启动 A2A 服务器：**
+1. **启动 A2A 服务器**：
+   ```bash
+   # 进入 A2A 智能体示例目录
+   cd examples/agent_examples/agent/a2a_agent
+   
+   # 启动 A2A 服务器
+   uvicorn setup_a2a_server:app --host 0.0.0.0 --port 8000
+   ```
+
+2. **运行 A2A 客户端**：
+   ```bash
+   # 在另一个终端中进入 A2A 智能体示例目录
+   cd examples/agent_examples/agent/a2a_agent
+   
+   # 运行客户端
+   python main.py
+   ```
+
+### 5.3 启动深度研究智能体服务
+
+深度研究智能体（Deep Research Agent）需要设置环境变量并启动 Tavily MCP Server：
+
+1. **设置环境变量**：
+   ```bash
+   # 设置 DashScope API 密钥
+   export DASHSCOPE_API_KEY="your_dashscope_api_key_here"
+   
+   # 设置 Tavily 搜索 API 密钥
+   export TAVILY_API_KEY="your_tavily_api_key_here"
+   
+   # 设置智能体操作目录（可选）
+   export AGENT_OPERATION_DIR="your_own_direction_here"
+   ```
+
+2. **测试 Tavily MCP Server**：
+   ```bash
+   npx -y tavily-mcp@latest
+   ```
+
+3. **运行深度研究智能体**：
+   ```bash
+   # 进入深度研究智能体示例目录
+   cd examples/agent_examples/agent/deep_research_agent
+   
+   # 运行智能体
+   python main.py
+   ```
+
+> 注意：深度研究智能体使用 DashScope 聊天模型。如果您想更改示例中的模型，请同时更改相应的格式化器。内置模型和格式化器的对应关系可在官方教程中找到。
+
+### 5.4 启动 A2UI 智能体服务
+
+A2UI（Agent-to-Agent UI）是一种协议，允许智能体向客户端发送流式、交互式用户界面。启动 A2UI 智能体服务需要以下步骤：
+
+1. **下载 A2UI 和 AgentScope 包**：
+   ```bash
+   # 克隆 A2UI 仓库
+   git clone https://github.com/google/A2UI.git
+   
+   # 克隆 AgentScope 仓库（如果尚未克隆）
+   git clone -b main https://github.com/agentscope-ai/agentscope.git
+   
+   # 复制 renderers 和 specification 目录到 AgentScope
+   cp -r A2UI/renderers AgentScope/examples/agent_examples/agent/a2ui_agent
+   cp -r A2UI/specification AgentScope/examples/agent_examples/agent/a2ui_agent
+   ```
+
+2. **运行餐厅查找器演示**：
+   ```bash
+   # 进入客户端目录
+   cd AgentScope/examples/agent_examples/agent/a2ui_agent/samples/client/lit
+   
+   # 运行演示
+   npm run demo:restaurant
+   ```
+
+> 注意：
+> - 示例使用 DashScope 聊天模型，请在运行演示前设置 `DASHSCOPE_API_KEY` 环境变量。
+> - 如果使用 Qwen 系列模型，建议使用 `qwen3-max` 以获得更好的 A2UI 兼容 JSON 响应性能。
+> - 生成 UI JSON 响应可能需要一些时间，通常为 1-2 分钟，因为智能体需要处理 schema、示例并生成复杂的 UI 结构。
+
+### 5.5 启动其他服务
+
+#### 启动多智能体实时交互服务
 
 ```bash
-# 从根目录直接启动 A2A 服务器
-uvicorn examples/agent_examples/agent/a2a_agent/setup_a2a_server:app --host 0.0.0.0 --port 8000
-```
+# 进入多智能体实时交互示例目录
+cd examples/agent_examples/workflows/multiagent_realtime
 
-**运行 A2A 客户端：**
-
-```bash
-# 在另一个终端中从根目录直接运行客户端
-python examples/agent_examples/agent/a2a_agent/main.py
-```
-
-### 5.3 启动其他服务
-
-**启动多智能体实时交互服务：**
-
-```bash
-# 从根目录直接启动多智能体实时交互服务
-python examples/agent_examples/workflows/multiagent_realtime/run_server.py
+# 启动服务
+python run_server.py
 ```
 
 服务启动后，您应该能看到类似以下输出：
@@ -327,8 +400,6 @@ INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
 
-**验证服务：**
-
-服务成功启动后，访问 http://localhost:8000 可以查看服务状态
-
-服务运行正常，无错误信息
+**验证服务**：
+- 服务成功启动后，访问 http://localhost:8000 可以查看服务状态
+- 服务运行正常，无错误信息
